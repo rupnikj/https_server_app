@@ -69,6 +69,4 @@ The application is set up to support HTTPS. It expects `server.crt` (certificate
 *   `assets/`: Contains static assets like SSL certificates.
 *   Platform-specific directories (`android/`, `ios/`, `linux/`, `macos/`, `web/`, `windows/`): Standard Flutter folders for building the app on respective platforms.
 
----
 
-This `README.md` should provide a good overview for anyone looking at your project.

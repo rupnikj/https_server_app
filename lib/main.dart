@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as path;
 import 'dart:developer' as developer; // For logging
+import 'package:shared_preferences/shared_preferences.dart'; // Added for persistence
 
 void main() {
   runApp(const MyApp());
@@ -41,9 +42,71 @@ class _ServerPageState extends State<ServerPage> {
   String _serverAddress = 'Not running';
   final int _port = 8443; // Port for HTTPS
 
-  // Store selected HTML files
   List<File> _selectedFiles = [];
   Map<String, String> _fileContents = {}; // Cache file contents
+  static const String _selectedFilesKey =
+      'selected_html_files'; // Key for SharedPreferences
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSelectedFiles();
+  }
+
+  Future<void> _loadSelectedFiles() async {
+    final prefs = await SharedPreferences.getInstance();
+    final List<String>? filePaths = prefs.getStringList(_selectedFilesKey);
+
+    if (filePaths != null && filePaths.isNotEmpty) {
+      List<File> loadedFiles = [];
+      List<String> validFilePaths = [];
+
+      for (String filePath in filePaths) {
+        final file = File(filePath);
+        if (await file.exists()) {
+          loadedFiles.add(file);
+          validFilePaths.add(filePath); // Keep track of valid paths to re-save
+          try {
+            final content = await file.readAsString();
+            _fileContents[path.basename(file.path)] = content;
+          } catch (e) {
+            developer.log(
+              'Error pre-loading persisted file ${file.path}: $e',
+              name: 'Persistence',
+            );
+          }
+        } else {
+          developer.log(
+            'Persisted file not found, removing from list: $filePath',
+            name: 'Persistence',
+          );
+        }
+      }
+      setState(() {
+        _selectedFiles = loadedFiles;
+      });
+      // Re-save the list with only valid files
+      await prefs.setStringList(_selectedFilesKey, validFilePaths);
+
+      if (mounted && loadedFiles.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Loaded ${loadedFiles.length} previously selected file(s).',
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _saveSelectedFiles() async {
+    final prefs = await SharedPreferences.getInstance();
+    final List<String> filePaths =
+        _selectedFiles.map((file) => file.path).toList();
+    await prefs.setStringList(_selectedFilesKey, filePaths);
+  }
 
   // Handler function for serving content
   Future<shelf.Response> _handleRequest(shelf.Request request) async {
@@ -153,6 +216,7 @@ class _ServerPageState extends State<ServerPage> {
           setState(() {
             _selectedFiles.addAll(newFiles);
           });
+          await _saveSelectedFiles(); // Save after adding
 
           // Pre-load file contents
           for (final file in newFiles) {
@@ -204,6 +268,7 @@ class _ServerPageState extends State<ServerPage> {
       _fileContents.remove(fileName);
       _selectedFiles.removeAt(index);
     });
+    _saveSelectedFiles(); // Save after removing
   }
 
   void _clearAllFiles() {
@@ -211,6 +276,7 @@ class _ServerPageState extends State<ServerPage> {
       _selectedFiles.clear();
       _fileContents.clear();
     });
+    _saveSelectedFiles(); // Save after clearing
   }
 
   Future<void> _startServer() async {
